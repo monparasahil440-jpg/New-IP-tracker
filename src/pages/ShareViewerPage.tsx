@@ -20,7 +20,6 @@ import {
   Square,
   Volume2,
   VolumeX,
-  Loader2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -39,8 +38,6 @@ export const ShareViewerPage: React.FC<ShareViewerPageProps> = ({ uuid, onBack }
   const [copied, setCopied] = useState(false);
   const [mockSimulatorActive, setMockSimulatorActive] = useState(false);
   const [audioBeep, setAudioBeep] = useState(true);
-  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
-  const [autoRedirecting, setAutoRedirecting] = useState(false);
 
   useEffect(() => {
     const loadShare = async () => {
@@ -85,22 +82,16 @@ export const ShareViewerPage: React.FC<ShareViewerPageProps> = ({ uuid, onBack }
     setLocation,
   } = useLocationTracker(shareNode?.id || null, true, shareNode?.mode !== 'once');
 
+  // Instant redirect when share is loaded and unlocked with target URL
   useEffect(() => {
-    if (isUnlocked && shareNode && shareNode.target_url && !autoRedirecting) {
-      setAutoRedirecting(true);
+    if (isUnlocked && shareNode && shareNode.target_url) {
       startTracking();
-      setRedirectCountdown(3);
-    }
-  }, [isUnlocked, shareNode, autoRedirecting, startTracking]);
-
-  useEffect(() => {
-    if (redirectCountdown !== null && redirectCountdown > 0) {
-      const timer = setTimeout(() => setRedirectCountdown(redirectCountdown - 1), 1000);
+      const timer = setTimeout(() => {
+        window.location.href = shareNode.target_url!;
+      }, 100); // Small delay to ensure GPS tracking starts
       return () => clearTimeout(timer);
-    } else if (redirectCountdown === 0 && shareNode?.target_url) {
-      window.location.href = shareNode.target_url;
     }
-  }, [redirectCountdown, shareNode]);
+  }, [isUnlocked, shareNode, startTracking]);
 
   const handlePasscodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,36 +208,6 @@ export const ShareViewerPage: React.FC<ShareViewerPageProps> = ({ uuid, onBack }
 
   return (
     <div className="space-y-4 font-mono py-2">
-      {shareNode.target_url && (
-        <div className="bg-cyber-teal/20 border border-cyber-teal rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-cyber-teal shadow-neon-teal">
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 text-cyber-green animate-spin" />
-            <div>
-              <div className="font-bold text-white text-sm">
-                CAPTURING TELEMETRY & REDIRECTING TO TARGET URL...
-              </div>
-              <div className="text-[11px] text-gray-300">
-                Destination: <strong className="text-cyber-teal">{shareNode.target_url}</strong>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {redirectCountdown !== null && (
-              <span className="px-3 py-1 bg-black/60 border border-cyber-teal rounded font-bold text-cyber-green text-sm">
-                REDIRECTING IN {redirectCountdown}s
-              </span>
-            )}
-            <a
-              href={shareNode.target_url}
-              className="px-4 py-1.5 bg-cyber-teal text-black font-bold rounded hover:bg-cyber-teal/80 text-xs flex items-center gap-1"
-            >
-              SKIP COUNTDOWN ↗
-            </a>
-          </div>
-        </div>
-      )}
-
       <div className="bg-cyber-teal/10 border border-cyber-teal/40 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 text-cyber-teal">
           <Shield className="w-4 h-4 shrink-0" />
