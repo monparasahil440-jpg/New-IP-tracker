@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { supabase, isSupabaseConfigured, getLocalShares, saveLocalShares } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getLocalShares, saveLocalShares, type LocationItem } from '../lib/supabase';
 import type { ShareItem } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { QRCodeModal } from '../components/QRCodeModal';
-import { Radio, Copy, QrCode, Trash2, ExternalLink, ShieldAlert, Clock, Check, RefreshCw, Plus } from 'lucide-react';
+import { Radio, Copy, QrCode, Trash2, ExternalLink, ShieldAlert, Clock, Check, RefreshCw, Plus, MapPin, Wifi, WifiOff, Battery } from 'lucide-react';
 
 interface DashboardPageProps {
   onOpenCreate: () => void;
@@ -16,6 +16,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onOpenCreate, onOp
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedQrUrl, setSelectedQrUrl] = useState<{ url: string; title: string } | null>(null);
+  const [shareLocations, setShareLocations] = useState<Record<string, LocationItem>>({});
 
   const fetchShares = async () => {
     setLoading(true);
@@ -75,6 +76,140 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onOpenCreate, onOp
 
   const activeShares = shares.filter((s) => s.active && !isExpired(s.expires_at));
   const expiredShares = shares.filter((s) => !s.active || isExpired(s.expires_at));
+
+  // Fetch latest locations for all active shares
+  useEffect(() => {
+    if (!isSupabaseConfigured || activeShares.length === 0) return;
+
+    const fetchLocations = async () => {
+      const locationData: Record<string, LocationItem> = {};
+      
+      for (const share of activeShares) {
+        const { data } = await supabase
+          .from('locations')
+          .select('*')
+          .eq('share_id', share.id)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+        
+        if (data && data.length > 0) {
+          locationData[share.id] = data[0] as LocationItem;
+        }
+      }
+      
+      setShareLocations(locationData);
+    };
+
+    fetchLocations();
+
+    // Subscribe to real-time location updates
+    const channels = activeShares.map(share => 
+      supabase
+        .channel(`location-dashboard-${share.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'locations',
+            filter: `share_id=eq.${share.id}`,
+          },
+          (payload) => {
+            setShareLocations(prev => ({
+              ...prev,
+              [share.id]: payload.new as LocationItem
+            }));
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'locations',
+            filter: `share_id=eq.${share.id}`,
+          },
+          (payload) => {
+            setShareLocations(prev => ({
+              ...prev,
+              [share.id]: payload.new as LocationItem
+            }));
+          }
+        )
+        .subscribe()
+    );
+
+    return () => {
+      channels.forEach(channel => supabase.removeChannel(channel));
+    };
+  }, [activeShares, isSupabaseConfigured]);
+
+  // Fetch latest locations for all active shares
+  useEffect(() => {
+    if (!isSupabaseConfigured || activeShares.length === 0) return;
+
+    const fetchLocations = async () => {
+      const locationData: Record<string, LocationItem> = {};
+      
+      for (const share of activeShares) {
+        const { data } = await supabase
+          .from('locations')
+          .select('*')
+          .eq('share_id', share.id)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+        
+        if (data && data.length > 0) {
+          locationData[share.id] = data[0] as LocationItem;
+        }
+      }
+      
+      setShareLocations(locationData);
+    };
+
+    fetchLocations();
+
+    // Subscribe to real-time location updates
+    const channels = activeShares.map(share => 
+      supabase
+        .channel(`location-dashboard-${share.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'locations',
+            filter: `share_id=eq.${share.id}`,
+          },
+          (payload) => {
+            setShareLocations(prev => ({
+              ...prev,
+              [share.id]: payload.new as LocationItem
+            }));
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'locations',
+            filter: `share_id=eq.${share.id}`,
+          },
+          (payload) => {
+            setShareLocations(prev => ({
+              ...prev,
+              [share.id]: payload.new as LocationItem
+            }));
+          }
+        )
+        .subscribe()
+    );
+
+    return () => {
+      channels.forEach(channel => supabase.removeChannel(channel));
+    };
+  }, [activeShares, isSupabaseConfigured]);
 
   return (
     <div className="space-y-8 py-4 font-mono">
@@ -159,6 +294,51 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onOpenCreate, onOp
                           </div>
                         )}
                       </div>
+
+                      {/* Live Location Display */}
+                      {shareLocations[share.id] && (
+                        <div className="p-3 bg-black/60 border border-cyber-green/30 rounded-lg space-y-2">
+                          <div className="flex items-center gap-2 text-cyber-green text-xs font-bold">
+                            <MapPin className="w-3.5 h-3.5 animate-pulse" />
+                            <span>LIVE LOCATION ACTIVE</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-[10px]">
+                            <div className="bg-black/40 p-2 rounded">
+                              <div className="text-gray-400">LATITUDE</div>
+                              <div className="text-cyber-teal font-bold">
+                                {shareLocations[share.id].latitude.toFixed(6)}
+                              </div>
+                            </div>
+                            <div className="bg-black/40 p-2 rounded">
+                              <div className="text-gray-400">LONGITUDE</div>
+                              <div className="text-cyber-teal font-bold">
+                                {shareLocations[share.id].longitude.toFixed(6)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-gray-300">
+                            <div className="flex items-center gap-1">
+                              <Wifi className="w-3 h-3 text-cyber-green" />
+                              <span>Updated: {new Date(shareLocations[share.id].updated_at).toLocaleTimeString()}</span>
+                            </div>
+                            {shareLocations[share.id].battery_level && (
+                              <div className="flex items-center gap-1">
+                                <Battery className="w-3 h-3 text-cyber-yellow" />
+                                <span>{shareLocations[share.id].battery_level}%</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {!shareLocations[share.id] && (
+                        <div className="p-3 bg-black/40 border border-cyber-border/30 rounded-lg text-center">
+                          <div className="text-[10px] text-gray-500 flex items-center justify-center gap-2">
+                            <WifiOff className="w-3 h-3" />
+                            <span>WAITING FOR LOCATION SIGNAL...</span>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="pt-2 border-t border-cyber-border flex items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-2">
