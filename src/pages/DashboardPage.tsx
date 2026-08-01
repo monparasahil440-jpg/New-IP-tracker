@@ -103,8 +103,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onOpenCreate, onOp
     fetchLocations();
 
     // Subscribe to real-time location updates
-    const channels = activeShares.map(share => 
-      supabase
+    const channels = activeShares.map(share => {
+      const channel = supabase
         .channel(`location-dashboard-${share.id}`)
         .on(
           'postgres_changes',
@@ -135,76 +135,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onOpenCreate, onOp
               [share.id]: payload.new as LocationItem
             }));
           }
-        )
-        .subscribe()
-    );
-
-    return () => {
-      channels.forEach(channel => supabase.removeChannel(channel));
-    };
-  }, [activeShares, isSupabaseConfigured]);
-
-  // Fetch latest locations for all active shares
-  useEffect(() => {
-    if (!isSupabaseConfigured || activeShares.length === 0) return;
-
-    const fetchLocations = async () => {
-      const locationData: Record<string, LocationItem> = {};
+        );
       
-      for (const share of activeShares) {
-        const { data } = await supabase
-          .from('locations')
-          .select('*')
-          .eq('share_id', share.id)
-          .order('updated_at', { ascending: false })
-          .limit(1);
-        
-        if (data && data.length > 0) {
-          locationData[share.id] = data[0] as LocationItem;
-        }
-      }
-      
-      setShareLocations(locationData);
-    };
-
-    fetchLocations();
-
-    // Subscribe to real-time location updates
-    const channels = activeShares.map(share => 
-      supabase
-        .channel(`location-dashboard-${share.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'locations',
-            filter: `share_id=eq.${share.id}`,
-          },
-          (payload) => {
-            setShareLocations(prev => ({
-              ...prev,
-              [share.id]: payload.new as LocationItem
-            }));
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'locations',
-            filter: `share_id=eq.${share.id}`,
-          },
-          (payload) => {
-            setShareLocations(prev => ({
-              ...prev,
-              [share.id]: payload.new as LocationItem
-            }));
-          }
-        )
-        .subscribe()
-    );
+      // Subscribe after adding all event listeners
+      channel.subscribe();
+      return channel;
+    });
 
     return () => {
       channels.forEach(channel => supabase.removeChannel(channel));
