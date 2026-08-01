@@ -141,6 +141,60 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ trackingCode, onOp
     fetchTrackingData();
   }, [trackingCode]);
 
+  // Realtime subscription for current tracking link dashboard
+  useEffect(() => {
+    if (!isSupabaseConfigured || !trackingLink) return;
+
+    const channel = supabase
+      .channel(`tracking-logs-${trackingLink.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'tracking_logs',
+          filter: `tracking_link_id=eq.${trackingLink.id}`,
+        },
+        (payload) => {
+          const newLog = payload.new as TrackingLog;
+          setTrackingLogs((prevLogs) => [newLog, ...prevLogs.filter(l => l.id !== newLog.id)]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [trackingLink, isSupabaseConfigured]);
+
+  // Realtime subscription for main dashboard tracking links visit counts
+  useEffect(() => {
+    if (!isSupabaseConfigured || trackingLinks.length === 0) return;
+
+    const channel = supabase
+      .channel('main-dashboard-tracking-logs')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'tracking_logs',
+        },
+        (payload) => {
+          const newLog = payload.new as TrackingLog;
+          setTrackingLinkStats((prevStats) => ({
+            ...prevStats,
+            [newLog.tracking_link_id]: (prevStats[newLog.tracking_link_id] || 0) + 1,
+          }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [trackingLinks, isSupabaseConfigured]);
+
   const handleDelete = async (share: ShareItem) => {
     if (!confirm(`Confirm deletion of location share node: "${share.title}"?`)) return;
 
@@ -152,14 +206,25 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ trackingCode, onOp
     saveLocalShares(updated);
   };
 
+  const getAppBaseUrl = () => {
+    const origin = window.location.origin;
+    const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+    let pathname = window.location.pathname.replace(/\/$/, '');
+    if (!pathname.startsWith(base) && base !== '') {
+      pathname = (base + '/' + pathname).replace(/\/+/g, '/');
+    }
+    if (!pathname || pathname === '/') pathname = base;
+    return `${origin}${pathname}`.replace(/\/$/, '');
+  };
+
   const buildShareUrl = (uuid: string) => {
-    const origin = window.location.origin + window.location.pathname;
-    return `${origin}#/share/${uuid}`;
+    const baseUrl = getAppBaseUrl();
+    return `${baseUrl}/#/share/${uuid}`;
   };
 
   const buildTrackingUrl = (code: string) => {
-    const origin = window.location.origin + window.location.pathname.replace(/\/$/, '');
-    return `${origin}/tracking.html?code=${code}`;
+    const baseUrl = getAppBaseUrl();
+    return `${baseUrl}/tracking.html?code=${code}`;
   };
 
   const handleCopyLink = (uuid: string, id: string) => {
@@ -438,9 +503,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ trackingCode, onOp
                 <div className="text-white">{latestLog.ip_address || 'N/A'}</div>
               </div>
               <div className="bg-black/40 rounded p-2">
-                <div className="text-gray-400 text-[10px]">Location</div>
+                <div className="text-gray-400 text-[10px]">IP Location</div>
                 <div className="text-white">
-                  {latestLog.city && latestLog.country ? `${latestLog.city}, ${latestLog.country}` : 'N/A'}
+                  {latestLog.city && latestLog.country ? `${latestLog.city}, ${latestLog.country}` : (latestLog.country || 'N/A')}
+                </div>
+              </div>
+              <div className="bg-black/40 rounded p-2">
+                <div className="text-gray-400 text-[10px]">Coordinates / Altitude</div>
+                <div className="text-white flex items-center gap-1 font-mono text-[11px]">
+                  {latestLog.latitude && latestLog.longitude ? (
+                    <span className="text-cyber-teal">
+                      {latestLog.latitude.toFixed(4)}°, {latestLog.longitude.toFixed(4)}°
+                      {latestLog.altitude ? ` (${Math.round(latestLog.altitude)}m alt)` : ''}
+                      {latestLog.accuracy ? (latestLog.accuracy > 1000 ? ' [IP Approx]' : ` ±${Math.round(latestLog.accuracy)}m [GPS]`) : ''}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">N/A</span>
+                  )}
                 </div>
               </div>
             </div>

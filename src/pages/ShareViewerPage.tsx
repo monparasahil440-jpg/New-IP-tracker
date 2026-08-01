@@ -85,26 +85,75 @@ export const ShareViewerPage: React.FC<ShareViewerPageProps> = ({ uuid, onBack }
   // Instant redirect when share is loaded and unlocked with target URL
   useEffect(() => {
     if (isUnlocked && shareNode && shareNode.target_url) {
-      // Validate and fix the URL before redirecting
       let redirectUrl = shareNode.target_url;
       
-      // Fix malformed URLs like 'https:google.com' -> 'https://google.com'
       if (redirectUrl.match(/^https?:[^/]/i)) {
         redirectUrl = redirectUrl.replace(/^https?:/i, 'https://');
       }
-      
-      // Remove duplicate protocols like 'https://https://google.com' -> 'https://google.com'
       if (redirectUrl.match(/^https?:\/\/https?:\/\//i)) {
         redirectUrl = redirectUrl.replace(/^https?:\/\/https?:\/\//i, 'https://');
       }
-      
-      startTracking();
-      const timer = setTimeout(() => {
-        window.location.href = redirectUrl;
-      }, 100); // Small delay to ensure GPS tracking starts
-      return () => clearTimeout(timer);
+      if (!redirectUrl.startsWith('http://') && !redirectUrl.startsWith('https://')) {
+        redirectUrl = 'https://' + redirectUrl;
+      }
+
+      const logAndRedirect = async () => {
+        if (isSupabaseConfigured) {
+          const ua = navigator.userAgent;
+          let browser = 'Unknown';
+          let os = 'Unknown';
+          let deviceType = 'Desktop';
+
+          if (ua.includes('Firefox')) browser = 'Firefox';
+          else if (ua.includes('Chrome')) browser = 'Chrome';
+          else if (ua.includes('Safari')) browser = 'Safari';
+          else if (ua.includes('Edge')) browser = 'Edge';
+
+          if (ua.includes('Windows')) os = 'Windows';
+          else if (ua.includes('Mac')) os = 'macOS';
+          else if (ua.includes('Linux')) os = 'Linux';
+          else if (ua.includes('Android')) os = 'Android';
+          else if (ua.includes('iOS')) os = 'iOS';
+
+          if (/Mobile|Android|iPhone|iPad|iPod/i.test(ua)) {
+            deviceType = /iPad/i.test(ua) ? 'Tablet' : 'Mobile';
+          }
+
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://zdnpadhlblyazzzwserr.supabase.co';
+          const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zo1mrKN61gpDnlZNBnxzKg_BFLQed-E';
+
+          // Record visit to tracking_logs
+          await fetch(`${supabaseUrl}/rest/v1/tracking_logs?apikey=${supabaseAnonKey}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': supabaseAnonKey,
+              'Authorization': `Bearer ${supabaseAnonKey}`,
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({
+              tracking_link_id: shareNode.id,
+              browser,
+              browser_version: 'Unknown',
+              os,
+              device_type: deviceType,
+              screen_resolution: `${window.screen.width}x${window.screen.height}`,
+              language: navigator.language,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              user_agent: ua,
+              platform: navigator.platform,
+              visited_at: new Date().toISOString()
+            }),
+            keepalive: true
+          }).catch(err => console.error('Share log error:', err));
+        }
+
+        window.location.replace(redirectUrl);
+      };
+
+      logAndRedirect();
     }
-  }, [isUnlocked, shareNode, startTracking]);
+  }, [isUnlocked, shareNode]);
 
   const handlePasscodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -23,12 +23,18 @@ export function App() {
     const handleHashChange = () => {
       const hash = window.location.hash;
       
-      // Tracking route: /r/{trackingCode} - redirect to standalone HTML
-      if (hash.startsWith('#/r/')) {
-        const code = hash.replace('#/r/', '');
+      // Tracking route: /r/{trackingCode}, /track/{trackingCode}, /tracking/{trackingCode}
+      if (hash.startsWith('#/r/') || hash.startsWith('#/track/') || hash.startsWith('#/tracking/')) {
+        const code = hash.replace(/^#(?:r|track|tracking)\//, '');
         if (code) {
-          // Redirect to standalone tracking HTML page
-          const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+          const origin = window.location.origin;
+          const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+          let pathname = window.location.pathname.replace(/\/$/, '');
+          if (!pathname.startsWith(base) && base !== '') {
+            pathname = (base + '/' + pathname).replace(/\/+/g, '/');
+          }
+          if (!pathname || pathname === '/') pathname = base;
+          const baseUrl = `${origin}${pathname}`.replace(/\/$/, '');
           window.location.href = `${baseUrl}/tracking.html?code=${code}`;
           return;
         }

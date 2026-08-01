@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS public.tracking_logs (
   latitude DOUBLE PRECISION,
   longitude DOUBLE PRECISION,
   accuracy DOUBLE PRECISION,
+  altitude DOUBLE PRECISION,
   battery_level DOUBLE PRECISION,
   charging BOOLEAN,
   browser TEXT NOT NULL,
