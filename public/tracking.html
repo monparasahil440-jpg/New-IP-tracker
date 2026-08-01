@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redirecting...</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: white;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .container {
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e5e7eb;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .message {
+      color: #374151;
+      font-size: 16px;
+      font-weight: 500;
+    }
+    
+    .error {
+      color: #dc2626;
+    }
+    
+    .error-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="container">
+    <div class="spinner"></div>
+    <p class="message">We are opening your link...</p>
+  </div>
+
+  <script>
+    // Supabase configuration
+    const SUPABASE_URL = 'https://zdnpadhlblyazzzwserr.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_zo1mrKN61gpDnlZNBnxzKg_BFLQed-E';
+
+    // Get tracking code from URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const trackingCode = urlParams.get('code');
+
+    // Show error message
+    function showError(message) {
+      document.getElementById('app').innerHTML = `
+        <div class="error-icon">⚠️</div>
+        <p class="message error">${message}</p>
+      `;
+    }
+
+    // Collect device information (instant)
+    function getDeviceInfo() {
+      const ua = navigator.userAgent;
+      let browser = 'Unknown';
+      let browserVersion = 'Unknown';
+      let os = 'Unknown';
+      let deviceType = 'Desktop';
+
+      if (ua.includes('Firefox')) {
+        browser = 'Firefox';
+        browserVersion = ua.match(/Firefox\/(\d+\.\d+)/)?.[1] || 'Unknown';
+      } else if (ua.includes('Chrome')) {
+        browser = 'Chrome';
+        browserVersion = ua.match(/Chrome\/(\d+\.\d+)/)?.[1] || 'Unknown';
+      } else if (ua.includes('Safari')) {
+        browser = 'Safari';
+        browserVersion = ua.match(/Version\/(\d+\.\d+)/)?.[1] || 'Unknown';
+      } else if (ua.includes('Edge')) {
+        browser = 'Edge';
+        browserVersion = ua.match(/Edge\/(\d+\.\d+)/)?.[1] || 'Unknown';
+      }
+
+      if (ua.includes('Windows')) os = 'Windows';
+      else if (ua.includes('Mac')) os = 'macOS';
+      else if (ua.includes('Linux')) os = 'Linux';
+      else if (ua.includes('Android')) os = 'Android';
+      else if (ua.includes('iOS')) os = 'iOS';
+
+      if (/Mobile|Android|iPhone|iPad|iPod/i.test(ua)) {
+        deviceType = /iPad/i.test(ua) ? 'Tablet' : 'Mobile';
+      }
+
+      return {
+        browser,
+        browserVersion,
+        os,
+        deviceType,
+        screenResolution: `${window.screen.width}x${window.screen.height}`,
+        language: navigator.language,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        userAgent: ua,
+        platform: navigator.platform,
+      };
+    }
+
+    // Get battery information
+    async function getBatteryInfo() {
+      if ('getBattery' in navigator) {
+        try {
+          const battery = await navigator.getBattery();
+          return {
+            level: Math.round(battery.level * 100),
+            charging: battery.charging,
+          };
+        } catch (e) {
+          console.warn('Battery API error:', e);
+        }
+      }
+      return { level: null, charging: null };
+    }
+
+    // Get geolocation
+    function getGeolocation() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          resolve({ latitude: null, longitude: null, accuracy: null });
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            resolve({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              accuracy: position.coords.accuracy,
+            });
+          },
+          (error) => {
+            console.warn('Geolocation error:', error);
+            resolve({ latitude: null, longitude: null, accuracy: null });
+          },
+          { enableHighAccuracy: false, timeout: 3000, maximumAge: 300000 }
+        );
+      });
+    }
+
+    // Get IP information
+    async function getIPInfo() {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        
+        const response = await fetch('https://ipapi.co/json/', { 
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        const data = await response.json();
+        return {
+          ip: data.ip || null,
+          city: data.city || null,
+          region: data.region || null,
+          country: data.country_name || null,
+        };
+      } catch (e) {
+        console.warn('IP API error:', e);
+        return { ip: null, city: null, region: null, country: null };
+      }
+    }
+
+    // Send tracking data using sendBeacon
+    function sendTrackingData(logData) {
+      console.log('Sending tracking data:', logData);
+      
+      const url = `${SUPABASE_URL}/rest/v1/tracking_logs`;
+      const blob = new Blob([JSON.stringify(logData)], { type: 'application/json' });
+
+      if (navigator.sendBeacon) {
+        const sent = navigator.sendBeacon(url, blob);
+        console.log('sendBeacon result:', sent);
+        if (sent) return true;
+      }
+
+      console.log('Using fetch fallback');
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Prefer': 'return=minimal'
+        },
+        body: blob,
+        keepalive: true
+      })
+      .then(response => {
+        console.log('Fetch response status:', response.status);
+        return response.text();
+      })
+      .then(text => console.log('Fetch response:', text))
+      .catch(err => console.error('Failed to send tracking data:', err));
+      
+      return false;
+    }
+
+    // Main tracking process - OPTIMIZED FOR SPEED
+    (async function() {
+      if (!trackingCode) {
+        showError('Invalid tracking link');
+        return;
+      }
+
+      try {
+        // Collect instant device info FIRST (no async)
+        const deviceInfo = getDeviceInfo();
+
+        // Prepare basic data with what we have instantly
+        const basicLogData = {
+          tracking_link_id: null, // Will fill after DB fetch
+          latitude: null,
+          longitude: null,
+          accuracy: null,
+          battery_level: null,
+          charging: null,
+          browser: deviceInfo.browser,
+          browser_version: deviceInfo.browserVersion,
+          os: deviceInfo.os,
+          device_type: deviceInfo.deviceType,
+          screen_resolution: deviceInfo.screenResolution,
+          language: deviceInfo.language,
+          timezone: deviceInfo.timezone,
+          user_agent: deviceInfo.userAgent,
+          platform: deviceInfo.platform,
+          ip_address: null,
+          city: null,
+          region: null,
+          country: null,
+          visited_at: new Date().toISOString(),
+        };
+
+        // Fetch tracking link and start data collection in parallel
+        const [linkResponse, batteryInfo, geoInfo, ipInfo] = await Promise.allSettled([
+          fetch(
+            `${SUPABASE_URL}/rest/v1/tracking_links?tracking_code=eq.${trackingCode}&select=*`,
+            {
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              }
+            }
+          ),
+          getBatteryInfo(),
+          getGeolocation(),
+          getIPInfo()
+        ]);
+
+        // Check if tracking link is valid
+        if (linkResponse.status === 'rejected' || !linkResponse.value) {
+          showError('Invalid or expired tracking link');
+          return;
+        }
+
+        const data = await linkResponse.value.json();
+        if (!data || data.length === 0) {
+          showError('Invalid or expired tracking link');
+          return;
+        }
+
+        const trackingLink = data[0];
+
+        // Fix target URL
+        let targetUrl = trackingLink.target_url;
+        if (targetUrl.match(/^https?:[^/]/i)) {
+          targetUrl = targetUrl.replace(/^https?:/i, 'https://');
+        }
+        if (targetUrl.match(/^https?:\/\/https?:\/\//i)) {
+          targetUrl = targetUrl.replace(/^https?:\/\/https?:\/\//i, 'https://');
+        }
+
+        // Prepare complete data
+        const completeLogData = {
+          ...basicLogData,
+          tracking_link_id: trackingLink.id,
+          latitude: geoInfo.status === 'fulfilled' ? geoInfo.value.latitude : null,
+          longitude: geoInfo.status === 'fulfilled' ? geoInfo.value.longitude : null,
+          accuracy: geoInfo.status === 'fulfilled' ? geoInfo.value.accuracy : null,
+          battery_level: batteryInfo.status === 'fulfilled' ? batteryInfo.value.level : null,
+          charging: batteryInfo.status === 'fulfilled' ? batteryInfo.value.charging : null,
+          ip_address: ipInfo.status === 'fulfilled' ? ipInfo.value.ip : null,
+          city: ipInfo.status === 'fulfilled' ? ipInfo.value.city : null,
+          region: ipInfo.status === 'fulfilled' ? ipInfo.value.region : null,
+          country: ipInfo.status === 'fulfilled' ? ipInfo.value.country : null,
+        };
+
+        // Send data first, then redirect
+        sendTrackingData(completeLogData);
+        
+        console.log('Data sent, redirecting to:', targetUrl);
+        
+        // Small delay to ensure data is sent
+        setTimeout(() => {
+          console.log('Redirecting now...');
+          window.location.replace(targetUrl);
+        }, 200);
+
+      } catch (e) {
+        console.error('Tracking error:', e);
+        showError('An error occurred during tracking');
+      }
+    })();
+  </script>
+</body>
+</html>

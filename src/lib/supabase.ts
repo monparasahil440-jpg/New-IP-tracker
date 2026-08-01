@@ -39,6 +39,39 @@ export interface LocationItem {
   updated_at: string;
 }
 
+export interface TrackingLink {
+  id: string;
+  tracking_code: string;
+  target_url: string;
+  creator_id?: string;
+  status: string;
+  created_at: string;
+}
+
+export interface TrackingLog {
+  id: string;
+  tracking_link_id: string;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+  battery_level: number | null;
+  charging: boolean | null;
+  browser: string;
+  browser_version: string;
+  os: string;
+  device_type: string;
+  screen_resolution: string;
+  language: string;
+  timezone: string;
+  user_agent: string;
+  platform: string;
+  ip_address: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  visited_at: string;
+}
+
 const LOCAL_STORAGE_SHARES_KEY = 'location_share_nodes_v1';
 const LOCAL_STORAGE_LOCS_KEY = 'location_share_telemetry_v1';
 

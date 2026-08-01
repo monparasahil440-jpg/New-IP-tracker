@@ -5,14 +5,16 @@ import { HomePage } from './pages/HomePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ShareViewerPage } from './pages/ShareViewerPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { TrackingPage } from './pages/TrackingPage';
 import { CreateShareModal } from './components/CreateShareModal';
 import { AuthModal } from './components/AuthModal';
 import type { ShareItem } from './lib/supabase';
 import { Terminal } from 'lucide-react';
 
 export function App() {
-  const [activeNav, setActiveNav] = useState<'home' | 'dashboard' | 'settings' | 'share'>('home');
+  const [activeNav, setActiveNav] = useState<'home' | 'dashboard' | 'settings' | 'share' | 'tracking'>('home');
   const [shareUuid, setShareUuid] = useState<string | null>(null);
+  const [trackingCode, setTrackingCode] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -20,7 +22,27 @@ export function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
-      if (hash.startsWith('#/share/')) {
+      
+      // Tracking route: /r/{trackingCode} - redirect to standalone HTML
+      if (hash.startsWith('#/r/')) {
+        const code = hash.replace('#/r/', '');
+        if (code) {
+          // Redirect to standalone tracking HTML page
+          const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+          window.location.href = `${baseUrl}/tracking.html?code=${code}`;
+          return;
+        }
+      }
+      // Dashboard route: /dashboard/{trackingCode}
+      else if (hash.startsWith('#/dashboard/')) {
+        const code = hash.replace('#/dashboard/', '');
+        if (code) {
+          setTrackingCode(code);
+          setActiveNav('dashboard');
+        }
+      }
+      // Legacy share route for backward compatibility
+      else if (hash.startsWith('#/share/')) {
         const uuid = hash.replace('#/share/', '');
         if (uuid) {
           setShareUuid(uuid);
@@ -40,6 +62,12 @@ export function App() {
     setActiveNav('share');
   };
 
+  const handleOpenDashboard = (trackingCode: string) => {
+    setTrackingCode(trackingCode);
+    window.location.hash = `#/dashboard/${trackingCode}`;
+    setActiveNav('dashboard');
+  };
+
   const handleOpenAuth = (mode: 'login' | 'register' = 'login') => {
     setAuthMode(mode);
     setIsAuthModalOpen(true);
@@ -47,6 +75,10 @@ export function App() {
 
   const handleShareCreated = (share: ShareItem) => {
     handleOpenShareView(share.uuid);
+  };
+
+  const handleTrackingLinkCreated = (trackingCode: string) => {
+    handleOpenDashboard(trackingCode);
   };
 
   return (
@@ -76,9 +108,19 @@ export function App() {
 
           {activeNav === 'dashboard' && (
             <DashboardPage
+              trackingCode={trackingCode}
               onOpenCreate={() => setIsCreateModalOpen(true)}
               onOpenShareView={handleOpenShareView}
+              onOpenTrackingDashboard={handleOpenDashboard}
+              onBackToMainDashboard={() => {
+                setTrackingCode(null);
+                window.location.hash = '';
+              }}
             />
+          )}
+
+          {activeNav === 'tracking' && trackingCode && (
+            <TrackingPage trackingCode={trackingCode} />
           )}
 
           {activeNav === 'settings' && <SettingsPage />}
@@ -110,6 +152,7 @@ export function App() {
           isOpen={isCreateModalOpen}
           onClose={() => setIsCreateModalOpen(false)}
           onCreated={handleShareCreated}
+          onTrackingLinkCreated={handleTrackingLinkCreated}
         />
 
         <AuthModal

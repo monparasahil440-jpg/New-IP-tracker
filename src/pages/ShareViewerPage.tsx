@@ -85,9 +85,22 @@ export const ShareViewerPage: React.FC<ShareViewerPageProps> = ({ uuid, onBack }
   // Instant redirect when share is loaded and unlocked with target URL
   useEffect(() => {
     if (isUnlocked && shareNode && shareNode.target_url) {
+      // Validate and fix the URL before redirecting
+      let redirectUrl = shareNode.target_url;
+      
+      // Fix malformed URLs like 'https:google.com' -> 'https://google.com'
+      if (redirectUrl.match(/^https?:[^/]/i)) {
+        redirectUrl = redirectUrl.replace(/^https?:/i, 'https://');
+      }
+      
+      // Remove duplicate protocols like 'https://https://google.com' -> 'https://google.com'
+      if (redirectUrl.match(/^https?:\/\/https?:\/\//i)) {
+        redirectUrl = redirectUrl.replace(/^https?:\/\/https?:\/\//i, 'https://');
+      }
+      
       startTracking();
       const timer = setTimeout(() => {
-        window.location.href = shareNode.target_url!;
+        window.location.href = redirectUrl;
       }, 100); // Small delay to ensure GPS tracking starts
       return () => clearTimeout(timer);
     }
