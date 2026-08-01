@@ -1,0 +1,16 @@
+{
+  "short_name": "LocationShare",
+  "name": "Location Share Tactical GPS Platform",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "./",
+  "background_color": "#050811",
+  "theme_color": "#050811",
+  "display": "standalone",
+  "orientation": "portrait"
+}

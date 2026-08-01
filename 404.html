@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Location Share - Redirecting</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        background-color: #050811;
+        color: #00f3ff;
+        font-family: 'Courier New', monospace;
+      }
+      .loading {
+        text-align: center;
+      }
+      .spinner {
+        border: 4px solid rgba(0, 243, 255, 0.3);
+        border-top: 4px solid #00f3ff;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Redirecting to Location Share...</p>
+    </div>
+    <script>
+      // Handle SPA routing for GitHub Pages
+      var path = window.location.pathname;
+      var hash = window.location.hash;
+      
+      // Redirect all routes to index.html with hash
+      if (path !== '/' && path !== '/index.html') {
+        var hashPath = path.replace(/^\/New-IP-tracker\//, '').replace(/^\//, '');
+        window.location.href = '/New-IP-tracker/#/' + hashPath;
+      } else {
+        window.location.href = '/New-IP-tracker/' + hash;
+      }
+    </script>
+  </body>
+</html>
